@@ -17,6 +17,7 @@ function AuthPage() {
   const [fullName, setFullName] = useState("");
   const [school, setSchool] = useState("");
   const [loading, setLoading] = useState(false);
+  const [verifyEmail, setVerifyEmail] = useState<string | null>(null);
 
   // Redirect if already signed in
   useEffect(() => {
