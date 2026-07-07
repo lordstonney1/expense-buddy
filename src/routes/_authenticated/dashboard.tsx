@@ -1,8 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { LogOut, Plus, Trash2, Wallet } from "lucide-react";
+import { Download, LogOut, Pencil, Plus, Trash2, Wallet, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -47,6 +47,11 @@ function fmtGHC(n: number) {
   }).format(n);
 }
 
+function csvEscape(v: string | number | null) {
+  const s = v == null ? "" : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 function Dashboard() {
   const { user } = Route.useRouteContext();
   const navigate = useNavigate();
@@ -73,7 +78,7 @@ function Dashboard() {
         .select("id, amount, category, description, spent_on, created_at")
         .order("spent_on", { ascending: false })
         .order("created_at", { ascending: false })
-        .limit(200);
+        .limit(500);
       if (error) throw error;
       return (data ?? []) as Expense[];
     },
@@ -85,9 +90,8 @@ function Dashboard() {
   const totalToday = expenses
     .filter((e) => e.spent_on === today)
     .reduce((s, e) => s + Number(e.amount), 0);
-  const totalMonth = expenses
-    .filter((e) => e.spent_on.startsWith(thisMonth))
-    .reduce((s, e) => s + Number(e.amount), 0);
+  const monthExpenses = expenses.filter((e) => e.spent_on.startsWith(thisMonth));
+  const totalMonth = monthExpenses.reduce((s, e) => s + Number(e.amount), 0);
   const totalAll = expenses.reduce((s, e) => s + Number(e.amount), 0);
 
   const [amount, setAmount] = useState("");
@@ -129,11 +133,50 @@ function Dashboard() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
+  const [editing, setEditing] = useState<Expense | null>(null);
+
   async function signOut() {
     await qc.cancelQueries();
     qc.clear();
     await supabase.auth.signOut();
     navigate({ to: "/auth", replace: true });
+  }
+
+  function exportMonthCSV() {
+    if (monthExpenses.length === 0) {
+      toast.info("No expenses this month to export.");
+      return;
+    }
+    const rows = [
+      ["Date", "Category", "Description", "Amount (GHS)"],
+      ...monthExpenses
+        .slice()
+        .sort((a, b) => a.spent_on.localeCompare(b.spent_on))
+        .map((e) => [
+          e.spent_on,
+          e.category,
+          e.description ?? "",
+          Number(e.amount).toFixed(2),
+        ]),
+      ["", "", "Total", totalMonth.toFixed(2)],
+    ];
+    const csv = rows.map((r) => r.map(csvEscape).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ceditrack-${thisMonth}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast.success("CSV downloaded");
+  }
+
+  function confirmDelete(id: string) {
+    if (window.confirm("Delete this expense? This cannot be undone.")) {
+      delM.mutate(id);
+    }
   }
 
   const firstName =
@@ -158,15 +201,24 @@ function Dashboard() {
       </header>
 
       <main className="mx-auto max-w-5xl px-6 py-10">
-        <div>
-          <h1 className="font-display text-3xl font-extrabold text-foreground">
-            Hi {firstName} 👋
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {profileQ.data?.school
-              ? `Tracking expenses at ${profileQ.data.school}.`
-              : "Here's your spending today."}
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="font-display text-3xl font-extrabold text-foreground">
+              Hi {firstName} 👋
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {profileQ.data?.school
+                ? `Tracking expenses at ${profileQ.data.school}.`
+                : "Here's your spending today."}
+            </p>
+          </div>
+          <button
+            onClick={exportMonthCSV}
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-secondary"
+          >
+            <Download className="h-4 w-4" />
+            Export this month (CSV)
+          </button>
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-3">
@@ -282,7 +334,14 @@ function Dashboard() {
                         {fmtGHC(Number(e.amount))}
                       </div>
                       <button
-                        onClick={() => delM.mutate(e.id)}
+                        onClick={() => setEditing(e)}
+                        className="rounded-md p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                        aria-label="Edit expense"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => confirmDelete(e.id)}
                         className="rounded-md p-2 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
                         aria-label="Delete expense"
                       >
@@ -296,6 +355,160 @@ function Dashboard() {
           </div>
         </section>
       </main>
+
+      {editing && (
+        <EditExpenseModal
+          expense={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            qc.invalidateQueries({ queryKey: ["expenses", user.id] });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditExpenseModal({
+  expense,
+  onClose,
+  onSaved,
+}: {
+  expense: Expense;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [amount, setAmount] = useState(String(expense.amount));
+  const [category, setCategory] = useState<Category>(expense.category);
+  const [description, setDescription] = useState(expense.description ?? "");
+  const [spentOn, setSpentOn] = useState(expense.spent_on);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n <= 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase
+      .from("expenses")
+      .update({
+        amount: n,
+        category,
+        description: description.trim() || null,
+        spent_on: spentOn,
+      })
+      .eq("id", expense.id);
+    setSaving(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Expense updated");
+    onSaved();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 px-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl"
+      >
+        <div className="flex items-start justify-between">
+          <h3 className="font-display text-lg font-bold text-foreground">Edit expense</h3>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <form onSubmit={save} className="mt-4 space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">
+              Amount (GHC)
+            </span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              required
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">
+              Category
+            </span>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value as Category)}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.emoji} {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">Date</span>
+            <input
+              type="date"
+              required
+              value={spentOn}
+              onChange={(e) => setSpentOn(e.target.value)}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">
+              Note (optional)
+            </span>
+            <input
+              type="text"
+              maxLength={140}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+            />
+          </label>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -316,9 +529,7 @@ function Stat({
         ? "from-accent to-accent/80 text-accent-foreground"
         : "from-secondary to-muted text-foreground";
   return (
-    <div
-      className={`rounded-2xl bg-gradient-to-br ${toneClass} p-5 shadow-sm`}
-    >
+    <div className={`rounded-2xl bg-gradient-to-br ${toneClass} p-5 shadow-sm`}>
       <p className="text-xs font-semibold uppercase tracking-wider opacity-80">{label}</p>
       <p className="mt-2 font-display text-2xl font-extrabold">{value}</p>
     </div>
