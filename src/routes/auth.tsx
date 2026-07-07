@@ -30,17 +30,21 @@ function AuthPage() {
     setLoading(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            emailRedirectTo: window.location.origin,
+            emailRedirectTo: `${window.location.origin}/dashboard`,
             data: { full_name: fullName, school },
           },
         });
         if (error) throw error;
-        toast.success("Account created! You can start tracking now.");
-        navigate({ to: "/dashboard", replace: true });
+        if (data.session) {
+          toast.success("Account created! You can start tracking now.");
+          navigate({ to: "/dashboard", replace: true });
+        } else {
+          setVerifyEmail(email);
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
