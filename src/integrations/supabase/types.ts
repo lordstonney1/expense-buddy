@@ -14,7 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      expenses: {
+        Row: {
+          amount: number
+          category: Database["public"]["Enums"]["expense_category"]
+          created_at: string
+          description: string | null
+          id: string
+          spent_on: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          category?: Database["public"]["Enums"]["expense_category"]
+          created_at?: string
+          description?: string | null
+          id?: string
+          spent_on?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          category?: Database["public"]["Enums"]["expense_category"]
+          created_at?: string
+          description?: string | null
+          id?: string
+          spent_on?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          full_name: string | null
+          id: string
+          school: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          full_name?: string | null
+          id: string
+          school?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          school?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +79,15 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      expense_category:
+        | "food"
+        | "transport"
+        | "books"
+        | "accommodation"
+        | "entertainment"
+        | "utilities"
+        | "health"
+        | "other"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +214,17 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      expense_category: [
+        "food",
+        "transport",
+        "books",
+        "accommodation",
+        "entertainment",
+        "utilities",
+        "health",
+        "other",
+      ],
+    },
   },
 } as const
