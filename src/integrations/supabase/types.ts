@@ -21,6 +21,7 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
+          receipt_path: string | null
           spent_on: string
           updated_at: string
           user_id: string
@@ -31,6 +32,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          receipt_path?: string | null
           spent_on?: string
           updated_at?: string
           user_id: string
@@ -41,6 +43,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          receipt_path?: string | null
           spent_on?: string
           updated_at?: string
           user_id?: string

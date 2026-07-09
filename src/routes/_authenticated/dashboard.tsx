@@ -1,8 +1,17 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Download, LogOut, Pencil, Plus, Trash2, Wallet, X } from "lucide-react";
+import {
+  Download,
+  LogOut,
+  Paperclip,
+  Pencil,
+  Plus,
+  Trash2,
+  Wallet,
+  X,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -37,7 +46,10 @@ type Expense = {
   description: string | null;
   spent_on: string;
   created_at: string;
+  receipt_path: string | null;
 };
+
+const MAX_RECEIPT_BYTES = 5 * 1024 * 1024; // 5 MB
 
 function fmtGHC(n: number) {
   return new Intl.NumberFormat("en-GH", {
@@ -50,6 +62,41 @@ function fmtGHC(n: number) {
 function csvEscape(v: string | number | null) {
   const s = v == null ? "" : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function extFor(file: File) {
+  const fromName = file.name.includes(".")
+    ? file.name.split(".").pop()!.toLowerCase()
+    : "";
+  if (fromName) return fromName;
+  const fromType = file.type.split("/")[1];
+  return fromType || "bin";
+}
+
+async function uploadReceipt(userId: string, expenseId: string, file: File) {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Receipt must be an image");
+  }
+  if (file.size > MAX_RECEIPT_BYTES) {
+    throw new Error("Receipt must be under 5 MB");
+  }
+  const path = `${userId}/${expenseId}-${Date.now()}.${extFor(file)}`;
+  const { error } = await supabase.storage
+    .from("receipts")
+    .upload(path, file, { upsert: true, contentType: file.type });
+  if (error) throw error;
+  return path;
+}
+
+async function openReceipt(path: string) {
+  const { data, error } = await supabase.storage
+    .from("receipts")
+    .createSignedUrl(path, 60);
+  if (error || !data) {
+    toast.error(error?.message ?? "Could not open receipt");
+    return;
+  }
+  window.open(data.signedUrl, "_blank", "noopener");
 }
 
 function Dashboard() {
@@ -75,7 +122,9 @@ function Dashboard() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("expenses")
-        .select("id, amount, category, description, spent_on, created_at")
+        .select(
+          "id, amount, category, description, spent_on, created_at, receipt_path",
+        )
         .order("spent_on", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(500);
@@ -98,32 +147,59 @@ function Dashboard() {
   const [category, setCategory] = useState<Category>("food");
   const [description, setDescription] = useState("");
   const [spentOn, setSpentOn] = useState(today);
+  const [receipt, setReceipt] = useState<File | null>(null);
+  const receiptInputRef = useRef<HTMLInputElement>(null);
 
   const addM = useMutation({
     mutationFn: async () => {
       const n = Number(amount);
       if (!Number.isFinite(n) || n <= 0) throw new Error("Enter a valid amount");
-      const { error } = await supabase.from("expenses").insert({
-        user_id: user.id,
-        amount: n,
-        category,
-        description: description.trim() || null,
-        spent_on: spentOn,
-      });
+      const { data: inserted, error } = await supabase
+        .from("expenses")
+        .insert({
+          user_id: user.id,
+          amount: n,
+          category,
+          description: description.trim() || null,
+          spent_on: spentOn,
+        })
+        .select("id")
+        .single();
       if (error) throw error;
+      if (receipt && inserted) {
+        try {
+          const path = await uploadReceipt(user.id, inserted.id, receipt);
+          const { error: updErr } = await supabase
+            .from("expenses")
+            .update({ receipt_path: path })
+            .eq("id", inserted.id);
+          if (updErr) throw updErr;
+        } catch (err) {
+          toast.error(
+            `Expense saved, but receipt failed: ${
+              err instanceof Error ? err.message : "unknown error"
+            }`,
+          );
+        }
+      }
     },
     onSuccess: () => {
       toast.success("Expense added");
       setAmount("");
       setDescription("");
+      setReceipt(null);
+      if (receiptInputRef.current) receiptInputRef.current.value = "";
       qc.invalidateQueries({ queryKey: ["expenses", user.id] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
   const delM = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("expenses").delete().eq("id", id);
+    mutationFn: async (exp: Expense) => {
+      if (exp.receipt_path) {
+        await supabase.storage.from("receipts").remove([exp.receipt_path]);
+      }
+      const { error } = await supabase.from("expenses").delete().eq("id", exp.id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -173,9 +249,9 @@ function Dashboard() {
     toast.success("CSV downloaded");
   }
 
-  function confirmDelete(id: string) {
+  function confirmDelete(exp: Expense) {
     if (window.confirm("Delete this expense? This cannot be undone.")) {
-      delM.mutate(id);
+      delM.mutate(exp);
     }
   }
 
@@ -280,7 +356,7 @@ function Dashboard() {
                 className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
               />
             </label>
-            <label className="sm:col-span-5">
+            <label className="sm:col-span-3">
               <span className="mb-1 block text-xs font-medium text-muted-foreground">
                 Note (optional)
               </span>
@@ -293,13 +369,34 @@ function Dashboard() {
                 className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
               />
             </label>
+            <label className="sm:col-span-2">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                Receipt (optional)
+              </span>
+              <input
+                ref={receiptInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  if (f && f.size > MAX_RECEIPT_BYTES) {
+                    toast.error("Receipt must be under 5 MB");
+                    e.target.value = "";
+                    setReceipt(null);
+                    return;
+                  }
+                  setReceipt(f);
+                }}
+                className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-2 file:text-xs file:font-medium file:text-foreground hover:file:bg-secondary/80"
+              />
+            </label>
             <button
               type="submit"
               disabled={addM.isPending}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 disabled:opacity-60 sm:col-span-1"
             >
               <Plus className="h-4 w-4" />
-              Add
+              {addM.isPending ? "Saving…" : "Add"}
             </button>
           </form>
         </section>
@@ -333,6 +430,16 @@ function Dashboard() {
                       <div className="font-display text-sm font-bold text-foreground">
                         {fmtGHC(Number(e.amount))}
                       </div>
+                      {e.receipt_path && (
+                        <button
+                          onClick={() => openReceipt(e.receipt_path!)}
+                          className="rounded-md p-2 text-primary transition hover:bg-primary/10"
+                          aria-label="View receipt"
+                          title="View receipt"
+                        >
+                          <Paperclip className="h-4 w-4" />
+                        </button>
+                      )}
                       <button
                         onClick={() => setEditing(e)}
                         className="rounded-md p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
@@ -341,7 +448,7 @@ function Dashboard() {
                         <Pencil className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => confirmDelete(e.id)}
+                        onClick={() => confirmDelete(e)}
                         className="rounded-md p-2 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
                         aria-label="Delete expense"
                       >
@@ -358,6 +465,7 @@ function Dashboard() {
 
       {editing && (
         <EditExpenseModal
+          userId={user.id}
           expense={editing}
           onClose={() => setEditing(null)}
           onSaved={() => {
@@ -371,10 +479,12 @@ function Dashboard() {
 }
 
 function EditExpenseModal({
+  userId,
   expense,
   onClose,
   onSaved,
 }: {
+  userId: string;
   expense: Expense;
   onClose: () => void;
   onSaved: () => void;
@@ -384,6 +494,8 @@ function EditExpenseModal({
   const [description, setDescription] = useState(expense.description ?? "");
   const [spentOn, setSpentOn] = useState(expense.spent_on);
   const [saving, setSaving] = useState(false);
+  const [newReceipt, setNewReceipt] = useState<File | null>(null);
+  const [removeExisting, setRemoveExisting] = useState(false);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -401,23 +513,43 @@ function EditExpenseModal({
       return;
     }
     setSaving(true);
-    const { error } = await supabase
-      .from("expenses")
-      .update({
+    try {
+      let receipt_path: string | null | undefined = undefined;
+
+      if (newReceipt) {
+        const path = await uploadReceipt(userId, expense.id, newReceipt);
+        if (expense.receipt_path && expense.receipt_path !== path) {
+          await supabase.storage.from("receipts").remove([expense.receipt_path]);
+        }
+        receipt_path = path;
+      } else if (removeExisting && expense.receipt_path) {
+        await supabase.storage.from("receipts").remove([expense.receipt_path]);
+        receipt_path = null;
+      }
+
+      const update = {
         amount: n,
         category,
         description: description.trim() || null,
         spent_on: spentOn,
-      })
-      .eq("id", expense.id);
-    setSaving(false);
-    if (error) {
-      toast.error(error.message);
-      return;
+        ...(receipt_path !== undefined ? { receipt_path } : {}),
+      };
+
+      const { error } = await supabase
+        .from("expenses")
+        .update(update)
+        .eq("id", expense.id);
+      if (error) throw error;
+      toast.success("Expense updated");
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
     }
-    toast.success("Expense updated");
-    onSaved();
   }
+
+  const hasExisting = !!expense.receipt_path && !removeExisting;
 
   return (
     <div
@@ -491,6 +623,52 @@ function EditExpenseModal({
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
             />
           </label>
+
+          <div>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">
+              Receipt
+            </span>
+            {hasExisting && (
+              <div className="mb-2 flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 text-sm">
+                <button
+                  type="button"
+                  onClick={() => openReceipt(expense.receipt_path!)}
+                  className="inline-flex items-center gap-2 text-primary hover:underline"
+                >
+                  <Paperclip className="h-4 w-4" />
+                  View current receipt
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRemoveExisting(true)}
+                  className="text-xs text-destructive hover:underline"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                if (f && f.size > MAX_RECEIPT_BYTES) {
+                  toast.error("Receipt must be under 5 MB");
+                  e.target.value = "";
+                  setNewReceipt(null);
+                  return;
+                }
+                setNewReceipt(f);
+              }}
+              className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-2 file:text-xs file:font-medium file:text-foreground hover:file:bg-secondary/80"
+            />
+            {newReceipt && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {hasExisting ? "Will replace the current receipt." : "New receipt selected."}
+              </p>
+            )}
+          </div>
+
           <div className="mt-5 flex justify-end gap-2">
             <button
               type="button"
