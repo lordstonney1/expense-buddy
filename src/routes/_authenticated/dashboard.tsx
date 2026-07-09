@@ -527,13 +527,13 @@ function EditExpenseModal({
         receipt_path = null;
       }
 
-      const update: Record<string, unknown> = {
+      const update = {
         amount: n,
         category,
         description: description.trim() || null,
         spent_on: spentOn,
+        ...(receipt_path !== undefined ? { receipt_path } : {}),
       };
-      if (receipt_path !== undefined) update.receipt_path = receipt_path;
 
       const { error } = await supabase
         .from("expenses")
