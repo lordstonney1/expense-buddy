@@ -475,6 +475,7 @@ function Dashboard() {
           }}
         />
       )}
+      <BottomNav />
     </div>
   );
 }
