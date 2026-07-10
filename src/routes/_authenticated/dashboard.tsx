@@ -260,7 +260,7 @@ function Dashboard() {
     (profileQ.data?.full_name ?? "").split(" ")[0] || user.email?.split("@")[0] || "there";
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen pb-24">
       <header className="border-b border-border/60 bg-card/60 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2 font-display text-lg font-bold text-primary">
