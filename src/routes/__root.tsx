@@ -14,6 +14,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "@/integrations/supabase/client";
 import { registerServiceWorker } from "@/lib/register-sw";
+import { initNativeDeepLinks } from "@/lib/native-deep-links";
 
 function NotFoundComponent() {
   return (
@@ -151,7 +152,11 @@ function RootComponent() {
 
   useEffect(() => {
     void registerServiceWorker();
-  }, []);
+    const dispose = initNativeDeepLinks(() => {
+      router.navigate({ to: "/dashboard", replace: true });
+    });
+    return dispose;
+  }, [router]);
 
   return (
     <QueryClientProvider client={queryClient}>

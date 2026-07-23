@@ -16,7 +16,13 @@ export async function registerServiceWorker() {
     host.endsWith(".beta.lovable.dev");
   const inIframe = window.self !== window.top;
   const killSwitch = new URLSearchParams(window.location.search).get("sw") === "off";
-  const refuse = !import.meta.env.PROD || inIframe || isPreviewHost || killSwitch;
+  // Also refuse inside the Capacitor native webview — the native shell already
+  // bundles the assets, and a SW inside the webview causes stale-content bugs.
+  const inCapacitor =
+    // @ts-expect-error - Capacitor injects this global at runtime on native.
+    typeof window !== "undefined" && !!window.Capacitor?.isNativePlatform?.();
+  const refuse =
+    !import.meta.env.PROD || inIframe || isPreviewHost || killSwitch || inCapacitor;
 
   if (refuse) {
     try {
