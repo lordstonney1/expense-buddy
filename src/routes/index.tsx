@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Wallet, ShieldCheck, LineChart } from "lucide-react";
+import { Wallet, ShieldCheck, LineChart, Download } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: Landing,
@@ -46,6 +46,46 @@ function Landing() {
             >
               I already have an account
             </Link>
+            <a
+              href="/CediTrack.apk"
+              download
+              className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-6 py-3 text-sm font-semibold text-primary transition hover:bg-primary/20"
+            >
+              <Download className="h-4 w-4" />
+              Download Android APK
+            </a>
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Android 7.0+ · Also installable as a PWA on iOS &amp; desktop.
+          </p>
+        </div>
+
+        <div id="download" className="mt-16 rounded-2xl border border-border bg-card p-6 md:p-8">
+          <div className="flex items-start gap-4">
+            <div className="rounded-xl bg-primary/10 p-3 text-primary">
+              <Download className="h-6 w-6" />
+            </div>
+            <div className="flex-1">
+              <h2 className="font-display text-xl font-bold text-foreground">
+                Get the Android app
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Install CediTrack directly on your Android phone. Works offline once opened.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <a
+                  href="/CediTrack.apk"
+                  download
+                  className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition hover:opacity-90"
+                >
+                  <Download className="h-4 w-4" />
+                  Download APK
+                </a>
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                After downloading, open the file and allow &ldquo;Install from unknown sources&rdquo; if prompted.
+              </p>
+            </div>
           </div>
         </div>
 
