@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Wallet } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
+import { isNative, NATIVE_AUTH_CALLBACK } from "@/lib/native";
 
 export const Route = createFileRoute("/auth")({
   component: AuthPage,
@@ -61,16 +62,30 @@ function AuthPage() {
 
   async function handleGoogle() {
     setLoading(true);
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
-    });
-    if (result.error) {
-      toast.error(result.error.message ?? "Google sign-in failed");
+    try {
+      if (isNative()) {
+        // On Android (Capacitor), open OAuth in the system browser and return
+        // to the app via the app.lovable.ceditrack:// deep link.
+        const { Browser } = await import("@capacitor/browser");
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: NATIVE_AUTH_CALLBACK, skipBrowserRedirect: true },
+        });
+        if (error) throw error;
+        if (data?.url) await Browser.open({ url: data.url });
+        return;
+      }
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: window.location.origin,
+      });
+      if (result.error) throw new Error(result.error.message ?? "Google sign-in failed");
+      if (result.redirected) return;
+      navigate({ to: "/dashboard", replace: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Google sign-in failed");
+    } finally {
       setLoading(false);
-      return;
     }
-    if (result.redirected) return;
-    navigate({ to: "/dashboard", replace: true });
   }
 
   return (
