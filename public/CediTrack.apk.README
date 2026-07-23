@@ -1,0 +1,9 @@
+# Place your built Android APK here as `CediTrack.apk`.
+#
+# After running `bun run android:sync` and building a signed APK in Android
+# Studio (Build → Generate Signed Bundle / APK), copy the resulting file to:
+#
+#   public/CediTrack.apk
+#
+# It will then be served at https://<your-site>/CediTrack.apk and the
+# "Download Android APK" button on the landing page will work.
