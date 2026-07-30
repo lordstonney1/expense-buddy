@@ -128,18 +128,8 @@ function Dashboard() {
 
   const expensesQ = useQuery({
     queryKey: ["expenses", user.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("expenses")
-        .select(
-          "id, amount, category, description, spent_on, created_at, receipt_path",
-        )
-        .order("spent_on", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(500);
-      if (error) throw error;
-      return (data ?? []) as Expense[];
-    },
+    // Local-first: serves the device copy when there's no connection.
+    queryFn: async () => (await fetchExpenses(user.id)) as unknown as Expense[],
   });
 
   const expenses = expensesQ.data ?? [];
