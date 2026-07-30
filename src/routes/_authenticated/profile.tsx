@@ -72,9 +72,7 @@ function Profile() {
 
       <main className="mx-auto max-w-3xl space-y-6 px-6 py-6">
         <div className="rounded-2xl border border-border bg-card p-6">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">
-            Signed in as
-          </p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Signed in as</p>
           <p className="mt-1 text-sm font-medium text-foreground">{user.email}</p>
         </div>
 
@@ -86,9 +84,7 @@ function Profile() {
           className="space-y-4 rounded-2xl border border-border bg-card p-6"
         >
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-foreground">
-              Full name
-            </span>
+            <span className="mb-1 block text-sm font-medium text-foreground">Full name</span>
             <input
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
@@ -146,8 +142,6 @@ function Profile() {
             </button>
           </div>
         </div>
-
-
 
         <button
           onClick={signOut}

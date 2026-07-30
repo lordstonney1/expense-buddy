@@ -63,9 +63,7 @@ function Reports() {
       <main className="mx-auto max-w-3xl px-6 py-6">
         <div className="rounded-2xl border border-border bg-card p-6">
           <p className="text-sm text-muted-foreground">This month</p>
-          <p className="mt-1 font-display text-3xl font-bold text-foreground">
-            {fmtGHC(total)}
-          </p>
+          <p className="mt-1 font-display text-3xl font-bold text-foreground">{fmtGHC(total)}</p>
         </div>
 
         <h2 className="mt-8 mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -84,18 +82,13 @@ function Reports() {
               const meta = CATS[category] ?? { label: category, emoji: "•" };
               const pct = total > 0 ? (amount / total) * 100 : 0;
               return (
-                <li
-                  key={category}
-                  className="rounded-xl border border-border bg-card p-4"
-                >
+                <li key={category} className="rounded-xl border border-border bg-card p-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-foreground">
                       <span className="mr-2">{meta.emoji}</span>
                       {meta.label}
                     </span>
-                    <span className="text-sm font-semibold text-foreground">
-                      {fmtGHC(amount)}
-                    </span>
+                    <span className="text-sm font-semibold text-foreground">{fmtGHC(amount)}</span>
                   </div>
                   <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-secondary">
                     <div

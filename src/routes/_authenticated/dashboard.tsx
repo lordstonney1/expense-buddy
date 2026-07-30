@@ -2,24 +2,10 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  Download,
-  LogOut,
-  Paperclip,
-  Pencil,
-  Plus,
-  Trash2,
-  Wallet,
-  X,
-} from "lucide-react";
+import { Download, LogOut, Paperclip, Pencil, Plus, Trash2, Wallet, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
-import {
-  fetchExpenses,
-  queueDelete,
-  queueInsert,
-  queueUpdate,
-} from "@/lib/offline-sync";
+import { fetchExpenses, queueDelete, queueInsert, queueUpdate } from "@/lib/offline-sync";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -73,11 +59,8 @@ function csvEscape(v: string | number | null) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-
 async function openReceipt(path: string) {
-  const { data, error } = await supabase.storage
-    .from("receipts")
-    .createSignedUrl(path, 60);
+  const { data, error } = await supabase.storage.from("receipts").createSignedUrl(path, 60);
   if (error || !data) {
     toast.error(error?.message ?? "Could not open receipt");
     return;
@@ -127,8 +110,6 @@ function Dashboard() {
   const receiptInputRef = useRef<HTMLInputElement>(null);
   const { online } = useSyncStatus();
 
-
-
   const addM = useMutation({
     mutationFn: async () => {
       const n = Number(amount);
@@ -171,7 +152,6 @@ function Dashboard() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-
   const [editing, setEditing] = useState<Expense | null>(null);
 
   async function signOut() {
@@ -191,12 +171,7 @@ function Dashboard() {
       ...monthExpenses
         .slice()
         .sort((a, b) => a.spent_on.localeCompare(b.spent_on))
-        .map((e) => [
-          e.spent_on,
-          e.category,
-          e.description ?? "",
-          Number(e.amount).toFixed(2),
-        ]),
+        .map((e) => [e.spent_on, e.category, e.description ?? "", Number(e.amount).toFixed(2)]),
       ["", "", "Total", totalMonth.toFixed(2)],
     ];
     const csv = rows.map((r) => r.map(csvEscape).join(",")).join("\n");
@@ -291,9 +266,7 @@ function Dashboard() {
               />
             </label>
             <label className="sm:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">
-                Category
-              </span>
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Category</span>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as Category)}
@@ -307,9 +280,7 @@ function Dashboard() {
               </select>
             </label>
             <label className="sm:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">
-                Date
-              </span>
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Date</span>
               <input
                 type="date"
                 required
@@ -512,7 +483,6 @@ function EditExpenseModal({
     }
   }
 
-
   const hasExisting = !!expense.receipt_path && !removeExisting;
 
   return (
@@ -550,9 +520,7 @@ function EditExpenseModal({
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">
-              Category
-            </span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">Category</span>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value as Category)}
@@ -589,9 +557,7 @@ function EditExpenseModal({
           </label>
 
           <div>
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">
-              Receipt
-            </span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">Receipt</span>
             {hasExisting && (
               <div className="mb-2 flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 text-sm">
                 <button

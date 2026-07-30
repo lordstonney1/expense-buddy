@@ -69,9 +69,7 @@ export async function localExpenses(userId: string): Promise<OfflineExpense[]> {
   if (!db) return [];
   const rows = await db.getAllFromIndex("expenses", "by_user", userId);
   return rows.sort(
-    (a, b) =>
-      b.spent_on.localeCompare(a.spent_on) ||
-      b.created_at.localeCompare(a.created_at),
+    (a, b) => b.spent_on.localeCompare(a.spent_on) || b.created_at.localeCompare(a.created_at),
   );
 }
 

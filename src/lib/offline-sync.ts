@@ -229,12 +229,7 @@ export async function queueDelete(input: {
 /* Sync                                                                */
 /* ------------------------------------------------------------------ */
 
-async function uploadBlob(
-  userId: string,
-  expenseId: string,
-  blob: Blob,
-  name?: string,
-) {
+async function uploadBlob(userId: string, expenseId: string, blob: Blob, name?: string) {
   const path = `${userId}/${expenseId}-${Date.now()}.${extFor(blob, name)}`;
   const { error } = await supabase.storage
     .from("receipts")
@@ -308,10 +303,7 @@ async function processEntry(entry: OutboxEntry) {
     if (entry.removeReceiptPath) {
       await supabase.storage.from("receipts").remove([entry.removeReceiptPath]);
     }
-    const { error } = await supabase
-      .from("expenses")
-      .delete()
-      .eq("id", entry.expenseId);
+    const { error } = await supabase.from("expenses").delete().eq("id", entry.expenseId);
     if (error) throw error;
     return;
   }
@@ -341,14 +333,14 @@ async function processEntry(entry: OutboxEntry) {
       .upsert({ ...(entry.payload as any), receipt_path: receiptPath ?? null });
     if (error) throw error;
   } else {
-    const { removeReceipt: _removeReceipt, ...rest } = entry.payload as Record<
-      string,
-      unknown
-    >;
+    const { removeReceipt: _removeReceipt, ...rest } = entry.payload as Record<string, unknown>;
     const { error } = await supabase
       .from("expenses")
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .update({ ...(rest as any), ...(receiptPath !== undefined ? { receipt_path: receiptPath } : {}) })
+
+      .update({
+        ...(rest as any),
+        ...(receiptPath !== undefined ? { receipt_path: receiptPath } : {}),
+      })
       .eq("id", entry.expenseId);
     if (error) throw error;
   }
