@@ -2,18 +2,11 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  Download,
-  LogOut,
-  Paperclip,
-  Pencil,
-  Plus,
-  Trash2,
-  Wallet,
-  X,
-} from "lucide-react";
+import { Download, LogOut, Paperclip, Pencil, Plus, Trash2, Wallet, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
+import { fetchExpenses, queueDelete, queueInsert, queueUpdate } from "@/lib/offline-sync";
+import { useSyncStatus } from "@/hooks/useSyncStatus";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
@@ -48,6 +41,7 @@ type Expense = {
   spent_on: string;
   created_at: string;
   receipt_path: string | null;
+  _pending?: boolean;
 };
 
 const MAX_RECEIPT_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -65,34 +59,8 @@ function csvEscape(v: string | number | null) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-function extFor(file: File) {
-  const fromName = file.name.includes(".")
-    ? file.name.split(".").pop()!.toLowerCase()
-    : "";
-  if (fromName) return fromName;
-  const fromType = file.type.split("/")[1];
-  return fromType || "bin";
-}
-
-async function uploadReceipt(userId: string, expenseId: string, file: File) {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("Receipt must be an image");
-  }
-  if (file.size > MAX_RECEIPT_BYTES) {
-    throw new Error("Receipt must be under 5 MB");
-  }
-  const path = `${userId}/${expenseId}-${Date.now()}.${extFor(file)}`;
-  const { error } = await supabase.storage
-    .from("receipts")
-    .upload(path, file, { upsert: true, contentType: file.type });
-  if (error) throw error;
-  return path;
-}
-
 async function openReceipt(path: string) {
-  const { data, error } = await supabase.storage
-    .from("receipts")
-    .createSignedUrl(path, 60);
+  const { data, error } = await supabase.storage.from("receipts").createSignedUrl(path, 60);
   if (error || !data) {
     toast.error(error?.message ?? "Could not open receipt");
     return;
@@ -120,18 +88,8 @@ function Dashboard() {
 
   const expensesQ = useQuery({
     queryKey: ["expenses", user.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("expenses")
-        .select(
-          "id, amount, category, description, spent_on, created_at, receipt_path",
-        )
-        .order("spent_on", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(500);
-      if (error) throw error;
-      return (data ?? []) as Expense[];
-    },
+    // Local-first: serves the device copy when there's no connection.
+    queryFn: async () => (await fetchExpenses(user.id)) as unknown as Expense[],
   });
 
   const expenses = expensesQ.data ?? [];
@@ -150,42 +108,26 @@ function Dashboard() {
   const [spentOn, setSpentOn] = useState(today);
   const [receipt, setReceipt] = useState<File | null>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
+  const { online } = useSyncStatus();
 
   const addM = useMutation({
     mutationFn: async () => {
       const n = Number(amount);
       if (!Number.isFinite(n) || n <= 0) throw new Error("Enter a valid amount");
-      const { data: inserted, error } = await supabase
-        .from("expenses")
-        .insert({
-          user_id: user.id,
-          amount: n,
-          category,
-          description: description.trim() || null,
-          spent_on: spentOn,
-        })
-        .select("id")
-        .single();
-      if (error) throw error;
-      if (receipt && inserted) {
-        try {
-          const path = await uploadReceipt(user.id, inserted.id, receipt);
-          const { error: updErr } = await supabase
-            .from("expenses")
-            .update({ receipt_path: path })
-            .eq("id", inserted.id);
-          if (updErr) throw updErr;
-        } catch (err) {
-          toast.error(
-            `Expense saved, but receipt failed: ${
-              err instanceof Error ? err.message : "unknown error"
-            }`,
-          );
-        }
+      if (receipt && receipt.size > MAX_RECEIPT_BYTES) {
+        throw new Error("Receipt must be under 5 MB");
       }
+      await queueInsert({
+        userId: user.id,
+        amount: n,
+        category,
+        description: description.trim() || null,
+        spent_on: spentOn,
+        receipt,
+      });
     },
     onSuccess: () => {
-      toast.success("Expense added");
+      toast.success(online ? "Expense added" : "Saved offline — will sync later");
       setAmount("");
       setDescription("");
       setReceipt(null);
@@ -197,11 +139,11 @@ function Dashboard() {
 
   const delM = useMutation({
     mutationFn: async (exp: Expense) => {
-      if (exp.receipt_path) {
-        await supabase.storage.from("receipts").remove([exp.receipt_path]);
-      }
-      const { error } = await supabase.from("expenses").delete().eq("id", exp.id);
-      if (error) throw error;
+      await queueDelete({
+        userId: user.id,
+        expenseId: exp.id,
+        receiptPath: exp.receipt_path,
+      });
     },
     onSuccess: () => {
       toast.success("Deleted");
@@ -229,12 +171,7 @@ function Dashboard() {
       ...monthExpenses
         .slice()
         .sort((a, b) => a.spent_on.localeCompare(b.spent_on))
-        .map((e) => [
-          e.spent_on,
-          e.category,
-          e.description ?? "",
-          Number(e.amount).toFixed(2),
-        ]),
+        .map((e) => [e.spent_on, e.category, e.description ?? "", Number(e.amount).toFixed(2)]),
       ["", "", "Total", totalMonth.toFixed(2)],
     ];
     const csv = rows.map((r) => r.map(csvEscape).join(",")).join("\n");
@@ -329,9 +266,7 @@ function Dashboard() {
               />
             </label>
             <label className="sm:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">
-                Category
-              </span>
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Category</span>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as Category)}
@@ -345,9 +280,7 @@ function Dashboard() {
               </select>
             </label>
             <label className="sm:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">
-                Date
-              </span>
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Date</span>
               <input
                 type="date"
                 required
@@ -426,6 +359,11 @@ function Dashboard() {
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {cat.label} · {new Date(e.spent_on).toLocaleDateString("en-GB")}
+                          {e._pending && (
+                            <span className="ml-2 inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              Pending sync
+                            </span>
+                          )}
                         </p>
                       </div>
                       <div className="font-display text-sm font-bold text-foreground">
@@ -516,33 +454,27 @@ function EditExpenseModal({
     }
     setSaving(true);
     try {
-      let receipt_path: string | null | undefined = undefined;
-
-      if (newReceipt) {
-        const path = await uploadReceipt(userId, expense.id, newReceipt);
-        if (expense.receipt_path && expense.receipt_path !== path) {
-          await supabase.storage.from("receipts").remove([expense.receipt_path]);
-        }
-        receipt_path = path;
-      } else if (removeExisting && expense.receipt_path) {
-        await supabase.storage.from("receipts").remove([expense.receipt_path]);
-        receipt_path = null;
+      if (newReceipt && newReceipt.size > MAX_RECEIPT_BYTES) {
+        throw new Error("Receipt must be under 5 MB");
       }
-
-      const update = {
-        amount: n,
-        category,
-        description: description.trim() || null,
-        spent_on: spentOn,
-        ...(receipt_path !== undefined ? { receipt_path } : {}),
-      };
-
-      const { error } = await supabase
-        .from("expenses")
-        .update(update)
-        .eq("id", expense.id);
-      if (error) throw error;
-      toast.success("Expense updated");
+      await queueUpdate({
+        userId,
+        expenseId: expense.id,
+        patch: {
+          amount: n,
+          category,
+          description: description.trim() || null,
+          spent_on: spentOn,
+        },
+        receipt: newReceipt,
+        removeReceipt: removeExisting && !newReceipt,
+        currentReceiptPath: expense.receipt_path,
+      });
+      toast.success(
+        typeof navigator !== "undefined" && !navigator.onLine
+          ? "Saved offline — will sync later"
+          : "Expense updated",
+      );
       onSaved();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save");
@@ -588,9 +520,7 @@ function EditExpenseModal({
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">
-              Category
-            </span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">Category</span>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value as Category)}
@@ -627,9 +557,7 @@ function EditExpenseModal({
           </label>
 
           <div>
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">
-              Receipt
-            </span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">Receipt</span>
             {hasExisting && (
               <div className="mb-2 flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 text-sm">
                 <button

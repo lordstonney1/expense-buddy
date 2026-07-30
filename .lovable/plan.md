@@ -1,67 +1,46 @@
+# Offline mode with auto-sync
 
-## Goal
+Students can add, edit and delete expenses with no internet. Changes are saved on the device and pushed to the database automatically the moment connectivity returns.
 
-Ship a real Android app (installable via APK / Google Play) using Capacitor, while keeping the existing PWA working for iOS, desktop, and Android browser users.
+## How it will behave
 
-## Approach
+- Adding an expense offline saves instantly and shows in the list with a "Pending sync" chip.
+- Editing/deleting works offline too, including editing an item that hasn't synced yet.
+- A slim status bar above the bottom nav shows: "Offline — 3 changes waiting" / "Syncing…" / "All synced".
+- The last loaded expense list stays visible offline (served from the device cache), so Home and Reports still show real numbers.
+- Receipt images picked while offline are stored on the device and uploaded during sync.
+- A manual "Sync now" action in Profile for when auto-sync needs a nudge.
 
-Capacitor is the right choice here — it wraps the existing web build in a native Android shell, so we keep one codebase. The PWA (manifest + service worker) stays untouched and continues to serve iOS/desktop/Android browsers.
+## Technical approach
 
-Important constraint: **Lovable's cloud sandbox cannot build an actual `.apk` / `.aab`** — that requires Android Studio + JDK + Android SDK on your local machine (or a CI service like EAS/Codemagic/GitHub Actions). What I *can* do here is scaffold the Capacitor project, configure it correctly, and give you a clean set of local commands to produce the APK.
+**Local storage layer (`src/lib/offline-db.ts`)**
+- IndexedDB via `idb` with two stores:
+  - `expenses` — local mirror of the user's rows (server rows + locally created ones, keyed by id).
+  - `outbox` — ordered queue of `{ id, op: 'insert'|'update'|'delete', payload, receiptBlob?, createdAt, attempts }`.
+- Locally created rows get a client-side UUID used as the real DB id, so inserts are idempotent and edits before sync just patch the same record.
 
-## What I'll set up
+**Query cache persistence**
+- Persist TanStack Query with `@tanstack/query-sync-storage-persister` + `persistQueryClient` (localStorage) in `src/router.tsx`, so previously loaded pages render offline instantly.
 
-1. **Install Capacitor**
-   - `@capacitor/core`, `@capacitor/cli`, `@capacitor/android`
-   - A couple of quality-of-life plugins: `@capacitor/status-bar`, `@capacitor/splash-screen`, `@capacitor/app` (back-button handling), `@capacitor/preferences`
+**Read path**
+- Expense queries read from IndexedDB first, then reconcile with the server response when a request succeeds; server rows overwrite local ones except where an outbox entry is still pending for that id.
 
-2. **`capacitor.config.ts`** at project root
-   - `appId: "app.lovable.ceditrack"` (change if you want your own)
-   - `appName: "CediTrack"`
-   - `webDir: "dist"` (TanStack Start's client build output)
-   - Splash screen + status bar colors matched to the existing theme (`#1e3a8a`)
-   - **Dev-mode server URL** pointing at the Lovable preview so you can hot-reload on a real device without rebuilding
+**Write path (`src/lib/offline-sync.ts`)**
+- All mutations in `dashboard.tsx` go through `queueMutation()`: write to IndexedDB + outbox, update the query cache optimistically, then attempt an immediate flush if `navigator.onLine`.
+- `flushOutbox()` processes entries in order: insert → upsert row, update → update by id, delete → remove receipt then delete row. Success removes the entry; failures increment `attempts` with exponential backoff (entries failing with a permanent RLS/validation error are dropped with a toast).
+- Triggers: `online` event, tab focus/visibility change, app start, a 30s interval while pending entries exist, and Capacitor's `App` resume event on Android.
 
-3. **Auth redirect fix for native**
-   - Supabase Google OAuth currently uses `window.location.origin`, which inside a Capacitor webview is `http://localhost` or `capacitor://localhost` — Google will reject it.
-   - I'll detect Capacitor at runtime and, on native, use a deep-link scheme (`app.lovable.ceditrack://auth/callback`) plus the `@capacitor/browser` plugin to open the OAuth flow in a system browser tab and return to the app.
-   - Email/password + password reset already work as-is.
+**UI**
+- `src/hooks/useOnlineStatus.ts` — online/offline + pending-count state from the sync module.
+- `src/components/SyncStatusBar.tsx` — the status strip, rendered next to `BottomNav`.
+- `dashboard.tsx` — pending badge per row, submit works while offline, delete/edit routed through the queue.
+- `profile.tsx` — "Sync now" button and last-synced timestamp.
+- `reports.tsx` — reads the same cached/local dataset so it works offline.
 
-4. **Service worker guard**
-   - `register-sw.ts` will also refuse to register when running inside Capacitor (native shell handles caching via the bundled assets, and a SW inside a webview causes stale-content bugs).
+**Service worker**
+- Existing `vite-plugin-pwa` config already caches the shell; no changes needed beyond leaving Supabase API calls uncached (they must always hit the network or fail into the queue).
 
-5. **Build script** in `package.json`
-   - `"android:sync": "vite build && cap sync android"`
-   - `"android:open": "cap open android"`
+## Notes
 
-6. **Docs** — a short `ANDROID.md` with the exact local steps:
-   ```
-   git clone <repo>
-   bun install
-   bunx cap add android      # first time only
-   bun run android:sync
-   bun run android:open      # opens Android Studio → Build > Generate Signed Bundle/APK
-   ```
-
-## What stays the same
-
-- PWA manifest, icons, install prompts on iOS/desktop/Android browsers
-- Service worker + offline behavior in the published web app
-- All Supabase auth, RLS, expenses, receipts, reports code
-
-## What you'll do locally (one-time)
-
-- Install Android Studio + JDK 17
-- Run `bunx cap add android` (creates the `/android` folder — this can't run in the Lovable sandbox)
-- Generate a signing key and build the release APK/AAB in Android Studio
-
-## Technical notes
-
-- `webDir` must match the Vite client output. TanStack Start builds to `dist/` — I'll verify and adjust if needed.
-- The dev-server URL in `capacitor.config.ts` will be commented out by default so production builds bundle the static assets. Uncomment for live-reload against the preview.
-- Google OAuth on native needs its redirect URI whitelisted in Supabase Auth settings — I'll list the exact URI to add.
-
-## Open questions before I build
-
-1. **App ID** — is `app.lovable.ceditrack` fine, or do you want your own (e.g. `com.yourschool.ceditrack`)? This is baked into the APK and hard to change later.
-2. **Google sign-in on Android** — keep it (needs the deep-link work above), or Android app = email/password only for now?
+- Offline behaviour is only fully testable in the published app or the native Android build — the Lovable editor preview does not run the service worker.
+- Sign-in still requires internet the first time; after that the session persists and offline capture works.
