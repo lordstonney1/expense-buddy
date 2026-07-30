@@ -73,29 +73,6 @@ function csvEscape(v: string | number | null) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-function extFor(file: File) {
-  const fromName = file.name.includes(".")
-    ? file.name.split(".").pop()!.toLowerCase()
-    : "";
-  if (fromName) return fromName;
-  const fromType = file.type.split("/")[1];
-  return fromType || "bin";
-}
-
-async function uploadReceipt(userId: string, expenseId: string, file: File) {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("Receipt must be an image");
-  }
-  if (file.size > MAX_RECEIPT_BYTES) {
-    throw new Error("Receipt must be under 5 MB");
-  }
-  const path = `${userId}/${expenseId}-${Date.now()}.${extFor(file)}`;
-  const { error } = await supabase.storage
-    .from("receipts")
-    .upload(path, file, { upsert: true, contentType: file.type });
-  if (error) throw error;
-  return path;
-}
 
 async function openReceipt(path: string) {
   const { data, error } = await supabase.storage
