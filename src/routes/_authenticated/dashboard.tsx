@@ -411,6 +411,11 @@ function Dashboard() {
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {cat.label} · {new Date(e.spent_on).toLocaleDateString("en-GB")}
+                          {e._pending && (
+                            <span className="ml-2 inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              Pending sync
+                            </span>
+                          )}
                         </p>
                       </div>
                       <div className="font-display text-sm font-bold text-foreground">
