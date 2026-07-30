@@ -15,6 +15,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "@/integrations/supabase/client";
 import { registerServiceWorker } from "@/lib/register-sw";
 import { initNativeDeepLinks } from "@/lib/native-deep-links";
+import { initOfflineSync } from "@/lib/offline-sync";
 
 function NotFoundComponent() {
   return (
@@ -155,8 +156,15 @@ function RootComponent() {
     const dispose = initNativeDeepLinks(() => {
       router.navigate({ to: "/dashboard", replace: true });
     });
-    return dispose;
-  }, [router]);
+    const stopSync = initOfflineSync(() => {
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
+    });
+    return () => {
+      dispose();
+      stopSync();
+    };
+  }, [router, queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>
