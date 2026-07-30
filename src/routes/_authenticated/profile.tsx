@@ -2,9 +2,11 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { LogOut, User } from "lucide-react";
+import { LogOut, RefreshCw, User } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
+import { syncNow } from "@/lib/offline-sync";
+import { useSyncStatus } from "@/hooks/useSyncStatus";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   component: Profile,
@@ -110,6 +112,41 @@ function Profile() {
             {saveM.isPending ? "Saving…" : "Save changes"}
           </button>
         </form>
+
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Offline sync</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {!sync.online
+                  ? "You're offline. Expenses are saved on this device."
+                  : sync.pending > 0
+                    ? `${sync.pending} change${sync.pending === 1 ? "" : "s"} waiting to upload.`
+                    : "Everything is synced."}
+                {sync.lastSyncedAt
+                  ? ` Last synced ${new Date(sync.lastSyncedAt).toLocaleString("en-GB")}.`
+                  : ""}
+              </p>
+            </div>
+            <button
+              onClick={async () => {
+                const { synced } = await syncNow();
+                await qc.invalidateQueries({ queryKey: ["expenses", user.id] });
+                await qc.invalidateQueries({ queryKey: ["reports", user.id] });
+                toast.success(
+                  synced > 0 ? `Synced ${synced} change${synced === 1 ? "" : "s"}` : "Up to date",
+                );
+              }}
+              disabled={sync.syncing || !sync.online}
+              className="inline-flex flex-none items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${sync.syncing ? "animate-spin" : ""}`} />
+              Sync now
+            </button>
+          </div>
+        </div>
+
+
 
         <button
           onClick={signOut}
