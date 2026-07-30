@@ -16,6 +16,7 @@ function Profile() {
   const { user } = Route.useRouteContext();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const sync = useSyncStatus();
 
   const profileQ = useQuery({
     queryKey: ["profile", user.id],
