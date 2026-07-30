@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { PieChart } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { fetchExpenses } from "@/lib/offline-sync";
 import { BottomNav } from "@/components/BottomNav";
 
 export const Route = createFileRoute("/_authenticated/reports")({
@@ -36,13 +36,8 @@ function Reports() {
   const q = useQuery({
     queryKey: ["reports", user.id, thisMonth],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("expenses")
-        .select("amount, category, spent_on")
-        .gte("spent_on", `${thisMonth}-01`)
-        .limit(1000);
-      if (error) throw error;
-      return (data ?? []) as Row[];
+      const all = await fetchExpenses(user.id);
+      return all.filter((r) => r.spent_on >= `${thisMonth}-01`) as Row[];
     },
   });
 
