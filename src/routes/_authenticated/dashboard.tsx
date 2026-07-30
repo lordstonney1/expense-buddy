@@ -153,37 +153,20 @@ function Dashboard() {
     mutationFn: async () => {
       const n = Number(amount);
       if (!Number.isFinite(n) || n <= 0) throw new Error("Enter a valid amount");
-      const { data: inserted, error } = await supabase
-        .from("expenses")
-        .insert({
-          user_id: user.id,
-          amount: n,
-          category,
-          description: description.trim() || null,
-          spent_on: spentOn,
-        })
-        .select("id")
-        .single();
-      if (error) throw error;
-      if (receipt && inserted) {
-        try {
-          const path = await uploadReceipt(user.id, inserted.id, receipt);
-          const { error: updErr } = await supabase
-            .from("expenses")
-            .update({ receipt_path: path })
-            .eq("id", inserted.id);
-          if (updErr) throw updErr;
-        } catch (err) {
-          toast.error(
-            `Expense saved, but receipt failed: ${
-              err instanceof Error ? err.message : "unknown error"
-            }`,
-          );
-        }
+      if (receipt && receipt.size > MAX_RECEIPT_BYTES) {
+        throw new Error("Receipt must be under 5 MB");
       }
+      await queueInsert({
+        userId: user.id,
+        amount: n,
+        category,
+        description: description.trim() || null,
+        spent_on: spentOn,
+        receipt,
+      });
     },
     onSuccess: () => {
-      toast.success("Expense added");
+      toast.success(online ? "Expense added" : "Saved offline — will sync later");
       setAmount("");
       setDescription("");
       setReceipt(null);
@@ -195,11 +178,11 @@ function Dashboard() {
 
   const delM = useMutation({
     mutationFn: async (exp: Expense) => {
-      if (exp.receipt_path) {
-        await supabase.storage.from("receipts").remove([exp.receipt_path]);
-      }
-      const { error } = await supabase.from("expenses").delete().eq("id", exp.id);
-      if (error) throw error;
+      await queueDelete({
+        userId: user.id,
+        expenseId: exp.id,
+        receiptPath: exp.receipt_path,
+      });
     },
     onSuccess: () => {
       toast.success("Deleted");
@@ -207,6 +190,7 @@ function Dashboard() {
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
+
 
   const [editing, setEditing] = useState<Expense | null>(null);
 
