@@ -506,33 +506,27 @@ function EditExpenseModal({
     }
     setSaving(true);
     try {
-      let receipt_path: string | null | undefined = undefined;
-
-      if (newReceipt) {
-        const path = await uploadReceipt(userId, expense.id, newReceipt);
-        if (expense.receipt_path && expense.receipt_path !== path) {
-          await supabase.storage.from("receipts").remove([expense.receipt_path]);
-        }
-        receipt_path = path;
-      } else if (removeExisting && expense.receipt_path) {
-        await supabase.storage.from("receipts").remove([expense.receipt_path]);
-        receipt_path = null;
+      if (newReceipt && newReceipt.size > MAX_RECEIPT_BYTES) {
+        throw new Error("Receipt must be under 5 MB");
       }
-
-      const update = {
-        amount: n,
-        category,
-        description: description.trim() || null,
-        spent_on: spentOn,
-        ...(receipt_path !== undefined ? { receipt_path } : {}),
-      };
-
-      const { error } = await supabase
-        .from("expenses")
-        .update(update)
-        .eq("id", expense.id);
-      if (error) throw error;
-      toast.success("Expense updated");
+      await queueUpdate({
+        userId,
+        expenseId: expense.id,
+        patch: {
+          amount: n,
+          category,
+          description: description.trim() || null,
+          spent_on: spentOn,
+        },
+        receipt: newReceipt,
+        removeReceipt: removeExisting && !newReceipt,
+        currentReceiptPath: expense.receipt_path,
+      });
+      toast.success(
+        typeof navigator !== "undefined" && !navigator.onLine
+          ? "Saved offline — will sync later"
+          : "Expense updated",
+      );
       onSaved();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save");
@@ -540,6 +534,7 @@ function EditExpenseModal({
       setSaving(false);
     }
   }
+
 
   const hasExisting = !!expense.receipt_path && !removeExisting;
 
