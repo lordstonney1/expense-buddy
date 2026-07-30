@@ -148,6 +148,9 @@ function Dashboard() {
   const [spentOn, setSpentOn] = useState(today);
   const [receipt, setReceipt] = useState<File | null>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
+  const { online } = useSyncStatus();
+
+
 
   const addM = useMutation({
     mutationFn: async () => {
