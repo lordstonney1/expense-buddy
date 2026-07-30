@@ -14,6 +14,13 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
+import {
+  fetchExpenses,
+  queueDelete,
+  queueInsert,
+  queueUpdate,
+} from "@/lib/offline-sync";
+import { useSyncStatus } from "@/hooks/useSyncStatus";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
@@ -48,6 +55,7 @@ type Expense = {
   spent_on: string;
   created_at: string;
   receipt_path: string | null;
+  _pending?: boolean;
 };
 
 const MAX_RECEIPT_BYTES = 5 * 1024 * 1024; // 5 MB
