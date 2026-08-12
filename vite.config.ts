@@ -24,6 +24,20 @@ export default defineConfig({
 
   vite: {
     plugins: [
+      // The SPA prerender step boots dist/server/server.js, but the Cloudflare
+      // nitro preset emits dist/server/index.mjs. Bridge the two during the
+      // Android build so the static shell can be rendered.
+      androidBuild && {
+        name: "android-spa-server-alias",
+        enforce: "post" as const,
+        async closeBundle() {
+          const { existsSync, writeFileSync } = await import("node:fs");
+          if (existsSync("dist/server/index.mjs") && !existsSync("dist/server/server.js")) {
+            writeFileSync("dist/server/server.js", `export * from "./index.mjs";\nexport { default } from "./index.mjs";\n`);
+          }
+        },
+      },
+
       VitePWA({
         registerType: "autoUpdate",
         injectRegister: null,
