@@ -7,36 +7,16 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 import { VitePWA } from "vite-plugin-pwa";
 
-// When ANDROID_BUILD=1 we build a static SPA shell (dist/client/index.html) for
-// the Capacitor Android app, which has no server to render HTML. In that mode we
-// drop the custom server entry because the SPA prerender step expects the default.
-const androidBuild = process.env.ANDROID_BUILD === "1";
-
 export default defineConfig({
-  tanstackStart: androidBuild
-    ? { spa: { enabled: true } }
-    : {
-        // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-        // nitro/vite builds from this
-        server: { entry: "server" },
-      },
-
+  tanstackStart: {
+    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
+    // nitro/vite builds from this
+    server: { entry: "server" },
+  },
 
   vite: {
     plugins: [
-      // The SPA prerender step boots dist/server/server.js, but the Cloudflare
-      // nitro preset emits dist/server/index.mjs. Bridge the two during the
-      // Android build so the static shell can be rendered.
-      androidBuild && {
-        name: "android-spa-server-alias",
-        enforce: "post" as const,
-        async closeBundle() {
-          const { existsSync, writeFileSync } = await import("node:fs");
-          if (existsSync("dist/server/index.mjs") && !existsSync("dist/server/server.js")) {
-            writeFileSync("dist/server/server.js", `export * from "./index.mjs";\nexport { default } from "./index.mjs";\n`);
-          }
-        },
-      },
+
 
       VitePWA({
         registerType: "autoUpdate",
