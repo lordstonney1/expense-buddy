@@ -14,7 +14,8 @@ export default defineConfig({
     server: { entry: "server" },
     // Emits a static SPA shell (dist/client/index.html) used by the Capacitor
     // Android app, which has no server to render HTML.
-    spa: { enabled: true },
+    // spa: disabled — prerender step is incompatible with the custom server entry
+
   },
 
   vite: {
