@@ -12,7 +12,11 @@ export default defineConfig({
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
     server: { entry: "server" },
+    // Emits a static SPA shell (dist/client/index.html) used by the Capacitor
+    // Android app, which has no server to render HTML.
+    spa: { enabled: true },
   },
+
   vite: {
     plugins: [
       VitePWA({
