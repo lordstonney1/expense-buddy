@@ -7,16 +7,20 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 import { VitePWA } from "vite-plugin-pwa";
 
-export default defineConfig({
-  tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
-    server: { entry: "server" },
-    // Emits a static SPA shell (dist/client/index.html) used by the Capacitor
-    // Android app, which has no server to render HTML.
-    // spa: disabled — prerender step is incompatible with the custom server entry
+// When ANDROID_BUILD=1 we build a static SPA shell (dist/client/index.html) for
+// the Capacitor Android app, which has no server to render HTML. In that mode we
+// drop the custom server entry because the SPA prerender step expects the default.
+const androidBuild = process.env.ANDROID_BUILD === "1";
 
-  },
+export default defineConfig({
+  tanstackStart: androidBuild
+    ? { spa: { enabled: true } }
+    : {
+        // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
+        // nitro/vite builds from this
+        server: { entry: "server" },
+      },
+
 
   vite: {
     plugins: [
