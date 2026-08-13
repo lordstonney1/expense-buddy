@@ -7,15 +7,23 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 import { VitePWA } from "vite-plugin-pwa";
 
+// ANDROID_BUILD=1 targets the Node preset so we can boot the built server
+// locally and snapshot the rendered HTML into dist/client/index.html — the
+// static shell the Capacitor Android app loads inside its WebView.
+const androidBuild = process.env.ANDROID_BUILD === "1";
+
 export default defineConfig({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  ...(androidBuild ? { nitro: { preset: "node-server" } } : {}),
 
   vite: {
     plugins: [
+
+
 
 
       VitePWA({
