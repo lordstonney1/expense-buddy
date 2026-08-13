@@ -19,6 +19,8 @@ direct install on Android devices. A matching **signed release AAB**
 
 ## Build
 
+### Debug (quick testing)
+
 ```bash
 bun install
 bun run android:sync    # builds the web app, renders the static shell, syncs /android
@@ -26,8 +28,24 @@ cd android && ./gradlew assembleDebug
 cp app/build/outputs/apk/debug/app-debug.apk ../public/CediTrack.apk
 ```
 
-For a signed release build, open the project (`bun run android:open`) and use
-**Build → Generate Signed Bundle / APK**.
+### Signed release (Play Store + production install)
+
+The release signing config is wired into `android/app/build.gradle` and reads
+its key from `android/keystore.properties` (gitignored). To rebuild a signed
+release:
+
+```bash
+bun install
+bun run android:sync      # build web assets + static shell + sync /android
+cd android
+# JDK 21 is required (AGP 8.13). Set JAVA_HOME to a JDK 21 install.
+./gradlew :app:bundleRelease     # -> app/build/outputs/bundle/release/app-release.aab  (Play Store)
+./gradlew :app:assembleRelease   # -> app/build/outputs/apk/release/app-release.apk    (direct install)
+cp app/build/outputs/apk/release/app-release.apk ../public/CediTrack.apk
+```
+
+Both outputs are signed automatically by the release config — no need to use
+Android Studio's "Generate Signed Bundle" wizard.
 
 ### How the web assets are packaged
 
