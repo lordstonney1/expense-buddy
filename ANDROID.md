@@ -4,31 +4,38 @@ CediTrack ships as a PWA (iOS, desktop, Android browsers) **and** a real Android
 app via [Capacitor](https://capacitorjs.com/). The web code is identical — the
 Android app just wraps the built site in a native shell.
 
-> ⚠️ You cannot build the `.apk` / `.aab` inside the Lovable sandbox. You need
-> Android Studio + JDK 17 on your local machine. The Lovable project only
-> contains the Capacitor configuration.
+A ready-to-install **debug APK is already built** and served at
+`/CediTrack.apk` (the "Download Android APK" button on the landing page).
+It is unsigned for the Play Store — good for direct install and testing.
+Use the steps below to rebuild it or to produce a signed release.
 
 ## Prerequisites (one-time)
 
 1. Install [Android Studio](https://developer.android.com/studio) (bundles the
    Android SDK).
-2. Install JDK 17 (Android Studio can install it under _Settings → Build Tools
-   → Gradle → Gradle JDK_).
-3. Install [Bun](https://bun.sh/) (or use npm / pnpm — the commands below are
-   the same, just swap the runner).
+2. Install JDK 21 (Android Studio: _Settings → Build Tools → Gradle → Gradle JDK_).
+3. Install [Bun](https://bun.sh/) (or use npm / pnpm — same commands).
 
-## First-time setup
+## Build
 
 ```bash
-git clone <your-repo>
-cd <your-repo>
 bun install
-
-# Creates the /android native project. Only run once.
-bunx cap add android
+bun run android:sync    # builds the web app, renders the static shell, syncs /android
+cd android && ./gradlew assembleDebug
+cp app/build/outputs/apk/debug/app-debug.apk ../public/CediTrack.apk
 ```
 
-Commit the generated `/android` folder to your repo.
+For a signed release build, open the project (`bun run android:open`) and use
+**Build → Generate Signed Bundle / APK**.
+
+### How the web assets are packaged
+
+The app is server-rendered, so the production build has no `index.html`.
+`bun run android:shell` (run automatically by `android:sync`) boots the built
+server locally, requests `/`, and snapshots the rendered HTML into
+`dist/client/index.html`. Capacitor loads that file inside the WebView and the
+router takes over from there — the app works fully offline.
+
 
 ## Every time you change web code
 

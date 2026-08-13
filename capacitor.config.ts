@@ -3,7 +3,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const config: CapacitorConfig = {
   appId: "app.lovable.ceditrack",
   appName: "CediTrack",
-  webDir: "dist",
+  webDir: "dist/client",
   // To live-reload against the Lovable preview on a real device, uncomment:
   // server: {
   //   url: "https://id-preview--ccd8ab7c-243d-4c6a-98cb-75bc11dde80f.lovable.app",
