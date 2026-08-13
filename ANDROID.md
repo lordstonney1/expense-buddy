@@ -4,10 +4,11 @@ CediTrack ships as a PWA (iOS, desktop, Android browsers) **and** a real Android
 app via [Capacitor](https://capacitorjs.com/). The web code is identical — the
 Android app just wraps the built site in a native shell.
 
-A ready-to-install **debug APK is already built** and served at
-`/CediTrack.apk` (the "Download Android APK" button on the landing page).
-It is unsigned for the Play Store — good for direct install and testing.
-Use the steps below to rebuild it or to produce a signed release.
+A **signed release APK** is built and served at `/CediTrack.apk` (the "Download
+Android APK" button on the landing page). It is release-signed and safe for
+direct install on Android devices. A matching **signed release AAB**
+(`.aab`) is also produced for Play Store upload — see
+[Publishing to Google Play](#publishing-to-google-play) below.
 
 ## Prerequisites (one-time)
 
