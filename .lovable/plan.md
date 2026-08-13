@@ -1,46 +1,54 @@
-# Offline mode with auto-sync
+# Plan: Make CediTrack Play Store–ready (signed release AAB)
 
-Students can add, edit and delete expenses with no internet. Changes are saved on the device and pushed to the database automatically the moment connectivity returns.
+## Current state (verified this turn)
+- A real **debug** APK exists at `public/CediTrack.apk` (4.5 MB) and installs via the landing-page "Download Android APK" button. Sideloading on Android devices already works.
+- The Android project (`/android`) is real and compiles. `applicationId = app.lovable.ceditrack`, `versionCode 1`, `versionName "1.0"`, `minSdk 24`, `targetSdk 36` — all within Play Store requirements (Play requires targetSdk 34+ for new apps in 2025).
+- **Blocker for Play Store:** `android/app/build.gradle` has a `release` build type with **no signing config**. No keystore exists. The Play Store rejects debug-signed/unsigned builds; it requires a release-signed **Android App Bundle (`.aab`)**.
 
-## How it will behave
+## What we'll do
 
-- Adding an expense offline saves instantly and shows in the list with a "Pending sync" chip.
-- Editing/deleting works offline too, including editing an item that hasn't synced yet.
-- A slim status bar above the bottom nav shows: "Offline — 3 changes waiting" / "Syncing…" / "All synced".
-- The last loaded expense list stays visible offline (served from the device cache), so Home and Reports still show real numbers.
-- Receipt images picked while offline are stored on the device and uploaded during sync.
-- A manual "Sync now" action in Profile for when auto-sync needs a nudge.
+### 1. Generate a release keystore (in the sandbox)
+- Use `keytool` (bundled with the installed JDK 21) to create `android/app/ceditrack-release.jks`:
+  - alias: `ceditrack`
+  - CN/Org: `CediTrack`, validity 25 years
+  - Passwords: generated, then stored in a gitignored `android/keystore.properties` file (keystore password, key alias, key password).
+- Add `android/keystore.properties` and `*.jks` / `*.keystore` to `.gitignore` so the signing key never leaks into the repo.
 
-## Technical approach
+### 2. Wire the signing config into Gradle
+- Edit `android/app/build.gradle`:
+  - Load `keystore.properties` at the top of the `android {}` block.
+  - Add a `signingConfigs { release { ... } }` block referencing the keystore file, alias, and passwords.
+  - Point the existing `release` build type at `signingConfig signingConfigs.release`.
+  - Bump `versionCode 1` → keep at 1 (first release), confirm `versionName "1.0"`.
+- This makes every `release` build signed automatically, including from Android Studio's "Generate Signed Bundle" flow.
 
-**Local storage layer (`src/lib/offline-db.ts`)**
-- IndexedDB via `idb` with two stores:
-  - `expenses` — local mirror of the user's rows (server rows + locally created ones, keyed by id).
-  - `outbox` — ordered queue of `{ id, op: 'insert'|'update'|'delete', payload, receiptBlob?, createdAt, attempts }`.
-- Locally created rows get a client-side UUID used as the real DB id, so inserts are idempotent and edits before sync just patch the same record.
+### 3. Build the signed release AAB + a signed release APK
+- Run `./gradlew :app:bundleRelease` to produce `android/app/build/outputs/bundle/release/app-release.aab` — the format the Play Store requires for new app submissions (Aug 2021 onward).
+- Run `./gradlew :app:assembleRelease` to also produce a signed `app-release.apk` for direct install/testing on devices that prefer APKs.
+- Copy the signed release APK to `public/CediTrack.apk` (replacing the debug build) so the download button serves a release-signed, production-grade app.
+- Report the AAB path and the keystore backup instructions to you.
 
-**Query cache persistence**
-- Persist TanStack Query with `@tanstack/query-sync-storage-persister` + `persistQueryClient` (localStorage) in `src/router.tsx`, so previously loaded pages render offline instantly.
+### 4. Document the Play Store upload path (in `ANDROID.md`)
+- Add a "Publishing to Google Play" section covering:
+  - You must create a Google Play Console developer account ($25 one-time) at play.google.com/console.
+  - Create a new app → Internal testing (fastest first release) or Production.
+  - Upload the `.aab` (drag-drop in the Play Console).
+  - Fill required store listing: app name, short/full description, app icon (512×512), feature graphic, screenshots, privacy policy URL.
+  - Set up **Play App Signing** (opt-in once on first upload) — Google keeps your signing key safe so you can reset it if you lose the keystore; your upload key still signs bundles.
+  - Add reviewers' emails for internal testing to distribute before production.
 
-**Read path**
-- Expense queries read from IndexedDB first, then reconcile with the server response when a request succeeds; server rows overwrite local ones except where an outbox entry is still pending for that id.
+### 5. Keystore backup warning (critical)
+- The generated keystore is the **only** thing that lets you publish updates to this app on the Play Store. Losing it means you can never update the published app.
+- I'll print its path and the `keystore.properties` contents so you can download both files (`ceditrack-release.jks` + `keystore.properties`) to a safe location immediately after the build.
 
-**Write path (`src/lib/offline-sync.ts`)**
-- All mutations in `dashboard.tsx` go through `queueMutation()`: write to IndexedDB + outbox, update the query cache optimistically, then attempt an immediate flush if `navigator.onLine`.
-- `flushOutbox()` processes entries in order: insert → upsert row, update → update by id, delete → remove receipt then delete row. Success removes the entry; failures increment `attempts` with exponential backoff (entries failing with a permanent RLS/validation error are dropped with a toast).
-- Triggers: `online` event, tab focus/visibility change, app start, a 30s interval while pending entries exist, and Capacitor's `App` resume event on Android.
+## Out of scope
+- Registering the Play Console account (you'll do that; $25 one-time, takes ~1–3 days for Google to verify).
+- Writing the actual store listing copy/screenshots (can be added once you have the account).
+- iOS / App Store (Capacitor can build iOS too, but that needs macOS + Xcode — not possible in this sandbox).
 
-**UI**
-- `src/hooks/useOnlineStatus.ts` — online/offline + pending-count state from the sync module.
-- `src/components/SyncStatusBar.tsx` — the status strip, rendered next to `BottomNav`.
-- `dashboard.tsx` — pending badge per row, submit works while offline, delete/edit routed through the queue.
-- `profile.tsx` — "Sync now" button and last-synced timestamp.
-- `reports.tsx` — reads the same cached/local dataset so it works offline.
-
-**Service worker**
-- Existing `vite-plugin-pwa` config already caches the shell; no changes needed beyond leaving Supabase API calls uncached (they must always hit the network or fail into the queue).
-
-## Notes
-
-- Offline behaviour is only fully testable in the published app or the native Android build — the Lovable editor preview does not run the service worker.
-- Sign-in still requires internet the first time; after that the session persists and offline capture works.
+## Acceptance
+- `android/app/build.gradle` has a working release signing config.
+- A signed `.aab` exists at `android/app/build/outputs/bundle/release/app-release.aab`.
+- `public/CediTrack.apk` is replaced with the signed release APK.
+- `ANDROID.md` documents the Play Store upload steps + keystore backup.
+- Keystore + properties are gitignored.
